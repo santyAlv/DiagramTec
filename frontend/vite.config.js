@@ -40,18 +40,5 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     strictPort: true,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:4002',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-      '/php-auth': {
-        target: process.env.VITE_PHP_TARGET || 'http://localhost',
-        changeOrigin: true,
-        rewrite: (path) =>
-          path.replace(/^\/php-auth/, process.env.VITE_PHP_PATH || '/nuevonuevo/DiagramTec/php'),
-      },
-    },
   },
 });

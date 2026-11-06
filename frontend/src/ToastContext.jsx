@@ -7,7 +7,6 @@ import React, {
   useState,
 } from 'react';
 import AppToast from './components/AppToast.jsx';
-import { registerToastHandlers } from './utils/toastBridge.js';
 
 const ToastContext = createContext(null);
 
@@ -27,11 +26,6 @@ export function ToastProvider({ children }) {
 
   const clearMessage = useCallback(() => setMessage(''), []);
   const clearError = useCallback(() => setError(''), []);
-
-  useEffect(() => {
-    registerToastHandlers({ showError, showMessage });
-    return () => registerToastHandlers(null);
-  }, [showError, showMessage]);
 
   useEffect(() => {
     if (!message && !error) return undefined;

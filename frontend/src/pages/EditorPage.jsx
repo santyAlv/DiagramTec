@@ -1,11 +1,8 @@
 /**
- * Editor de diagramas de flujo (rutas /editor y /editor/:id).
- * Gestiona formas, conexiones, zoom/pan, historial, guardado y exportación PDF/PNG.
+ * Editor de diagramas de flujo .
+ * Gestiona formas, conexiones, zoom/pan, historial, exportación PDF/PNG.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext.jsx';
-import api from '../api.js';
 import html2canvas from 'html2canvas';
 
 import Icon from '../components/Icon.jsx';
@@ -56,21 +53,8 @@ import {
   ShapePreview,
 } from '../design';
 
-const EDITOR_BACKUP_PREFIX = 'diagramtec_editor_backup';
-
-function getEditorBackupKey(designId) {
-  return `${EDITOR_BACKUP_PREFIX}:${designId || 'new'}`;
-}
-
-function hasDiagramContent(state) {
-  return (state.shapes?.length ?? 0) > 0 || (state.connections?.length ?? 0) > 0;
-}
-
 export default function EditorPage() {
-  const { user } = useAuth();
   const { showError, showMessage } = useToast();
-  const { id } = useParams();
-  const navigate = useNavigate();
 
   const [shapes, setShapes] = useState([]);
   const [connections, setConnections] = useState([]);
@@ -79,25 +63,20 @@ export default function EditorPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState(null);
   const [saveTitle, setSaveTitle] = useState('Mi diagrama');
-  const [saveClassId, setSaveClassId] = useState('');
-  const [classes, setClasses] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [historyStack, setHistoryStack] = useState({ entries: [], index: -1 });
-  const [isSaving, setIsSaving] = useState(false);
   const [paletteTouchDrag, setPaletteTouchDrag] = useState(null);
   const [paletteDragOverCanvas, setPaletteDragOverCanvas] = useState(false);
   const [draggingShapeIds, setDraggingShapeIds] = useState([]);
   const [connectionDraft, setConnectionDraft] = useState(null);
   const [connectionHandleSides, setConnectionHandleSides] = useState({});
-  const [backupPrompt, setBackupPrompt] = useState(null);
 
   const canvasRef = useRef(null);
   const canvasWrapperRef = useRef(null);
   const paletteDragSessionRef = useRef(null);
-  const backupReadyRef = useRef(false);
   const interactionInProgressRef = useRef(false);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -115,60 +94,6 @@ export default function EditorPage() {
     () => ({ shapes, connections }),
     [shapes, connections]
   );
-
-  const saveBrowserBackup = useCallback((reason = 'autosave') => {
-    if (!hasDiagramContent(diagramState)) return false;
-    try {
-      localStorage.setItem(
-        getEditorBackupKey(id),
-        JSON.stringify({
-          id: id || null,
-          title: saveTitle,
-          classId: saveClassId || '',
-          content: serializeDiagram(diagramState),
-          savedAt: new Date().toISOString(),
-          reason,
-        }),
-      );
-      return true;
-    } catch (err) {
-      console.warn('No se pudo guardar backup local del editor:', err);
-      return false;
-    }
-  }, [diagramState, id, saveClassId, saveTitle]);
-
-  const saveBrowserBackupFromRefs = useCallback((reason = 'interaction-end') => {
-    const state = {
-      shapes: shapesRef.current,
-      connections: connectionsRef.current,
-    };
-    if (!hasDiagramContent(state)) return false;
-    try {
-      localStorage.setItem(
-        getEditorBackupKey(id),
-        JSON.stringify({
-          id: id || null,
-          title: saveTitle,
-          classId: saveClassId || '',
-          content: serializeDiagram(state),
-          savedAt: new Date().toISOString(),
-          reason,
-        }),
-      );
-      return true;
-    } catch (err) {
-      console.warn('No se pudo guardar backup local del editor:', err);
-      return false;
-    }
-  }, [id, saveClassId, saveTitle]);
-
-  const clearBrowserBackup = useCallback((designId = id) => {
-    try {
-      localStorage.removeItem(getEditorBackupKey(designId));
-    } catch (err) {
-      console.warn('No se pudo limpiar backup local del editor:', err);
-    }
-  }, [id]);
 
   const shapesById = useMemo(() => shapesToMap(shapes), [shapes]);
 
@@ -326,36 +251,6 @@ export default function EditorPage() {
     setPan(computeCenterPan(clientWidth, clientHeight, zoomRef.current));
   }, []);
 
-  const restoreBrowserBackup = useCallback((backup) => {
-    const content = parseDiagramContent(backup.content);
-    setSaveTitle(backup.title || 'Mi diagrama');
-    setSaveClassId(backup.classId || '');
-    setShapes(content.shapes);
-    setConnections(content.connections);
-    setNextId(nextShapeIdFromList(content.shapes));
-    setHistoryStack(initHistoryWithState(content));
-    setTimeout(centerView, 100);
-  }, [centerView]);
-
-  const showBrowserBackupPrompt = useCallback((designId = id) => {
-    try {
-      const raw = localStorage.getItem(getEditorBackupKey(designId));
-      if (!raw) return false;
-      const backup = JSON.parse(raw);
-      const content = parseDiagramContent(backup.content);
-      if (!hasDiagramContent(content)) return false;
-
-      setBackupPrompt({
-        designId: designId || null,
-        backup,
-        savedAt: backup.savedAt ? new Date(backup.savedAt).toLocaleString() : '',
-      });
-      return true;
-    } catch (err) {
-      console.warn('No se pudo leer backup local del editor:', err);
-      return false;
-    }
-  }, [id]);
 
   const applyZoom = useCallback((getNextZoom, focalX, focalY) => {
     setZoom((currentZoom) => {
@@ -404,57 +299,8 @@ export default function EditorPage() {
   }, [centerView, sidebarOpen]);
 
   useEffect(() => {
-    if (!user && id) {
-      showError('Inicia sesión para abrir diseños guardados');
-      navigate('/editor', { replace: true });
-      return;
-    }
-    if (!user && !id) {
-      if (!showBrowserBackupPrompt(null)) {
-        const empty = emptyDiagramState();
-        setHistoryStack(initHistoryWithState(empty));
-      }
-      backupReadyRef.current = true;
-      return;
-    }
-    if (user) {
-      api.get('/classes/available').then((r) => setClasses(r.data.classes)).catch(() => setClasses([]));
-    }
-    if (user && id) {
-      api.get(`/designs/${id}`).then((response) => {
-        const design = response.data.design;
-        setSaveTitle(design.title);
-        const content = parseDiagramContent(design.content);
-        setShapes(content.shapes);
-        setConnections(content.connections);
-        setNextId(nextShapeIdFromList(content.shapes));
-        setHistoryStack(initHistoryWithState(content));
-        showBrowserBackupPrompt(id);
-        backupReadyRef.current = true;
-        setTimeout(centerView, 500);
-      }).catch(() => {
-        showBrowserBackupPrompt(id);
-        backupReadyRef.current = true;
-      });
-      return;
-    }
-    if (user && !id) {
-      showBrowserBackupPrompt(null);
-      backupReadyRef.current = true;
-    }
-  }, [user, id, centerView, navigate, showBrowserBackupPrompt, showError]);
-
-  useEffect(() => {
-    if (
-      !backupReadyRef.current
-      || interactionInProgressRef.current
-      || !hasDiagramContent(diagramState)
-    ) return undefined;
-    const timeout = window.setTimeout(() => {
-      saveBrowserBackup('autosave');
-    }, 2500);
-    return () => window.clearTimeout(timeout);
-  }, [diagramState, saveBrowserBackup, saveClassId, saveTitle]);
+    setHistoryStack(initHistoryWithState(emptyDiagramState()));
+  }, []);
 
   useEffect(() => {
     const wrapper = canvasWrapperRef.current;
@@ -879,7 +725,6 @@ export default function EditorPage() {
       setDraggingShapeIds([]);
       commitHistory(shapesRef.current, connectionsRef.current);
       interactionInProgressRef.current = false;
-      saveBrowserBackupFromRefs('move-end');
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -922,7 +767,6 @@ export default function EditorPage() {
       setDraggingShapeIds([]);
       commitHistory(shapesRef.current, connectionsRef.current);
       interactionInProgressRef.current = false;
-      saveBrowserBackupFromRefs('move-end');
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', cleanup);
       window.removeEventListener('touchcancel', cleanup);
@@ -961,7 +805,6 @@ export default function EditorPage() {
     const onMouseUp = () => {
       commitHistory(shapesRef.current, connectionsRef.current);
       interactionInProgressRef.current = false;
-      saveBrowserBackupFromRefs('resize-end');
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -1001,7 +844,6 @@ export default function EditorPage() {
     const onTouchEnd = () => {
       commitHistory(shapesRef.current, connectionsRef.current);
       interactionInProgressRef.current = false;
-      saveBrowserBackupFromRefs('resize-end');
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
     };
@@ -1018,88 +860,14 @@ export default function EditorPage() {
     centerView();
   };
 
-  const handleRestoreBackup = () => {
-    if (!backupPrompt?.backup) return;
-    restoreBrowserBackup(backupPrompt.backup);
-    setBackupPrompt(null);
-    showMessage('Backup local recuperado');
-  };
-
-  const handleDismissBackup = () => {
-    if (backupPrompt) {
-      clearBrowserBackup(backupPrompt.designId);
-    }
-    setBackupPrompt(null);
-    showMessage('Backup local descartado');
-  };
-
-  const handleSave = async () => {
-    if (isSaving) return;
-    if (!user) {
-      saveBrowserBackup('guest-save');
-      showError('Inicia sesión para guardar tus diseños en la nube');
-      showMessage('Se guardó un backup en este navegador');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      let imageData = null;
-      let pdfDataString = null;
-
-      if (canvasRef.current) {
-        const bounds = getDiagramBounds(shapes);
-        const previewCanvas = await captureDiagramPreview(canvasRef.current, shapes);
-        imageData = canvasToPngDataUrl(previewCanvas);
-        pdfDataString = await buildInlinePdfDataUrl(previewCanvas, bounds.width, bounds.height);
-      }
-
-      const data = {
-        title: saveTitle,
-        content: serializeDiagram(diagramState),
-        image: imageData,
-        pdf_data: pdfDataString,
-        classId: saveClassId || null,
-      };
-
-      if (id) {
-        await api.put(`/designs/${id}`, data);
-        clearBrowserBackup(id);
-      } else {
-        const res = await api.post('/designs', data);
-        clearBrowserBackup(null);
-        navigate(`/editor/${res.data.design.id}`, { replace: true });
-      }
-      showMessage('Diseño guardado en Diseños');
-    } catch (err) {
-      console.error('Error al guardar:', err);
-      const backedUp = saveBrowserBackup('server-save-failed');
-      showError(
-        backedUp
-          ? 'No se pudo guardar en el servidor. Dejamos un backup en este navegador.'
-          : 'No se pudo guardar en el servidor ni crear el backup local.',
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleExportPDF = async () => {
     if (!canvasRef.current) return;
     showMessage('Generando PDF...');
     try {
       const pdfCanvas = await captureDiagramHighRes(canvasRef.current, shapes);
-      const pdfData = await downloadDiagramPdf(pdfCanvas, shapes, saveTitle || 'diagrama');
+      await downloadDiagramPdf(pdfCanvas, shapes, saveTitle || 'diagrama');
       showMessage('PDF descargado');
 
-      if (id && pdfData) {
-        try {
-          await api.put(`/designs/${id}`, { pdf_data: pdfData });
-        } catch (syncErr) {
-          console.warn('PDF descargado; falló guardar copia en servidor:', syncErr);
-          showMessage('PDF descargado (no se guardó la copia en la nube)');
-        }
-      }
     } catch (err) {
       console.error('Error PDF:', err);
       showError('Error al generar el PDF');
@@ -1110,7 +878,7 @@ export default function EditorPage() {
     if (!canvasRef.current) return;
     html2canvas(canvasRef.current, { backgroundColor: '#ffffff', scale: 2 }).then((canvas) => {
       const link = document.createElement('a');
-      link.download = 'diagrama-dfd.png';
+      link.download = `${saveTitle || 'diagrama'}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     });
@@ -1195,15 +963,9 @@ export default function EditorPage() {
             <EditorToolbar
               saveTitle={saveTitle}
               setSaveTitle={setSaveTitle}
-              classes={classes}
-              saveClassId={saveClassId}
-              setSaveClassId={setSaveClassId}
-              handleSave={handleSave}
               handleClear={handleClear}
               handleExport={handleExport}
               handleExportPDF={handleExportPDF}
-              isSaving={isSaving}
-              isGuest={!user}
             />
           </div>
 
@@ -1217,7 +979,6 @@ export default function EditorPage() {
             redo={redo}
             canUndo={canUndo(historyStack)}
             canRedo={canRedo(historyStack)}
-            isSaving={isSaving}
             onBringToFront={handleBringToFront}
             onCopyPaste={handleCopyPaste}
             onDelete={handleDeleteSelected}
@@ -1363,23 +1124,6 @@ export default function EditorPage() {
         </div>
       )}
 
-      {backupPrompt && (
-        <div className="editor-backup-toast app-toast" role="status" aria-live="polite">
-          <p className="app-toast__text">
-            Hay un backup local de este diseño
-            {backupPrompt.savedAt ? ` (${backupPrompt.savedAt})` : ''}
-            . ¿Querés recuperarlo?
-          </p>
-          <div className="editor-backup-toast__actions">
-            <button type="button" onClick={handleRestoreBackup}>
-              Recuperar
-            </button>
-            <button type="button" onClick={handleDismissBackup}>
-              Descartar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,15 +1,7 @@
-/** Barra superior del editor: título, guardar, exportar PDF, zoom. */
-import { Link } from 'react-router-dom';
+/** Barra superior del editor: título y descarga (PDF / PNG). */
 import Icon from './Icon';
 
-export default function EditorToolbar({
-  saveTitle, setSaveTitle,
-  classes, saveClassId, setSaveClassId,
-  handleSave, handleClear, handleExport, handleExportPDF,
-  isSaving,
-  isGuest = false,
-}) {
-  // componente de la barra de herramientas del editor
+export default function EditorToolbar({ saveTitle, setSaveTitle, handleExport, handleExportPDF }) {
   return (
     <div className="editor-toolbar-fs figma-editor-toolbar">
       <div className="toolbar-left-fs">
@@ -25,22 +17,10 @@ export default function EditorToolbar({
 
       <div className="toolbar-right-fs">
         <div className="toolbar-actions-group figma-toolbar-actions">
-          {isGuest ? (
-            <Link
-              className="btn btn-primary figma-btn-save"
-              to="/login"
-              state={{ from: '/editor' }}
-              id="btn-save"
-              title="Inicia sesión para guardar tu diseño"
-            >
-              <Icon name="save" size={18} /> Guardar
-            </Link>
-          ) : (
-            <button type="button" className="btn btn-primary figma-btn-save" onClick={handleSave} disabled={isSaving} id="btn-save">
-              <Icon name="save" size={18} /> {isSaving ? 'Guardando...' : 'Guardar'}
-            </button>
-          )}
-          <button type="button" className="btn btn-primary figma-btn-save figma-btn-pdf" onClick={handleExportPDF} id="btn-export-pdf" disabled={isSaving}>
+          <button type="button" className="btn btn-primary figma-btn-save figma-btn-pdf" onClick={handleExport} id="btn-export-png">
+            <Icon name="download" size={18} /> PNG
+          </button>
+          <button type="button" className="btn btn-primary figma-btn-save figma-btn-pdf" onClick={handleExportPDF} id="btn-export-pdf">
             <Icon name="download" size={18} /> PDF
           </button>
         </div>

@@ -1,7 +1,0 @@
-vendor/
-.env
-
-# pnpm
-.pnpm-store/
-.pnpm-debug.log*
-pnpm-lock.yaml
